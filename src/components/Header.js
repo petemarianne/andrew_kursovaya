@@ -2,7 +2,7 @@ import {Modal} from "./Modal.js";
 import {useCallback, useState} from "react";
 import {ReactComponent as UserIcon} from '../images/user.svg';
 
-export const Header = ({user, setUser, isAuthorized, userFavorites, setFilter, setUserFavorites}) => {
+export const Header = ({user, setUser, isAuthorized, userFavorites, setFilter, setShowMovie, movieList}) => {
     const [showModal, setShowModal] = useState('');
 
     const handleCloseModal = useCallback(() => setShowModal(false), []);
@@ -26,6 +26,8 @@ export const Header = ({user, setUser, isAuthorized, userFavorites, setFilter, s
                     <div className="dropdown">
                         <button className="user-button"><UserIcon className="user-icon"/></button>
                         <div className="dropdown-content">
+                            <h4>{`${user.name} ${user.surname}`}</h4>
+                            <h5>{user.email}</h5>
                             {user.isAdmin && <span onClick={() => setShowModal('AddMovie')}>Добавить фильм</span>}
                             {user.isAdmin && <span onClick={() => setShowModal('Registration')}>Создать администратора</span>}
                             <span onClick={() => setShowModal('Favorites')}>Посмотреть позже</span>
@@ -38,7 +40,7 @@ export const Header = ({user, setUser, isAuthorized, userFavorites, setFilter, s
                     </div>
                 }
             </header>
-            {showModal && <Modal close={handleCloseModal} setUser={setUser} initialTab={showModal} userFavorites={userFavorites} user={user} />}
+            {showModal && <Modal close={handleCloseModal} setUser={setUser} initialTab={showModal} userFavorites={userFavorites} user={user} movieList={movieList} setShowMovie={setShowMovie}/>}
         </>
     );
 }

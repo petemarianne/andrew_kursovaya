@@ -2,9 +2,11 @@ import express from 'express';
 import config from 'config';
 import path from 'path';
 import mysql from 'mysql2';
-import bcrypt, {hash} from "bcrypt";
+import bcrypt from "bcrypt";
 import {check, validationResult} from "express-validator";
 import multer from "multer";
+import cors from "cors";
+import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
 
@@ -13,6 +15,10 @@ const options = {
 }
 
 app.use(express.json(options));
+app.use(cors({
+    origin: 'http://localhost:3000',
+    optionsSuccessStatus: 200
+}))
 
 const pool = mysql.createPool({
     host: 'db4free.net',
@@ -131,8 +137,8 @@ app.post('/api/movies', uploadPhoto.single('pic'), async (req, res) => {
         const { name, country, producer, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, duration, director } = req.body;
 
         await pool.query(
-            `INSERT into movies (director, producer, country, name, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, rating, ratingCount, duration, pic) values
-                ('${director}', '${producer}', '${country}', '${name}', '${description}', '${actors}', '${trailer}', ${age}, ${money}, ${budget}, '${screenwriter}', '${operator}', '${genre}', '${date}', '${englishName || ''}', 0, 0, ${duration}, '${image}');`
+            `INSERT into movies (director, producer, country, name, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, rating, ratingCount, duration, pic, reviews) values
+                ('${director}', '${producer}', '${country}', '${name}', '${description}', '${actors}', '${trailer}', ${age}, ${money}, ${budget}, '${screenwriter}', '${operator}', '${genre}', '${date}', '${englishName || ''}', 0, 0, ${duration}, '${image}', '[]');`
         );
 
         return res.redirect('http://localhost:3000');
@@ -144,16 +150,19 @@ app.post('/api/movies', uploadPhoto.single('pic'), async (req, res) => {
 app.get('/api/movies', async (req, res) => {
     try {
         let query = `SELECT * FROM movies`;
-        const { search, year, genre, country } = req.query;
-        const queryObject = { name: search, year, genre, country };
+        const { search, year, genre, country, page, sort } = req.query;
+        const queryObject = { name: search, year, genre, country, page: (+page - 1) * 10 };
         const queryKeys = Object.keys(queryObject).filter(key => queryObject[key]);
         if (queryKeys.length)
             queryKeys.forEach((key, index, array) => {
                 if (!index) query += ' where ';
-                if (key === 'year') query += `DATE(date) > "${year}-01-01" and DATE(date) < "${Number(year) + 1}-01-01"`
+                if (key === 'page') query += '';
+                else if (key === 'year') query += `DATE(date) > "${year}-01-01" and DATE(date) < "${Number(year) + 1}-01-01"`
                 else query += `${key} LIKE lower('%${queryObject[key].toLowerCase()}%')`;
                 if (index !== array.length - 1) query += ' and ';
             });
+
+        query += ` ORDER BY rating ${+sort === 1 ? 'DESC' : 'ASC'} LIMIT ${queryObject.page},10`;
 
         const [movieList] = await pool.query(`${query};`);
 
@@ -161,28 +170,58 @@ app.get('/api/movies', async (req, res) => {
             item.ratingCount = JSON.parse(item.ratingCount).length
         });
 
-        return res.status(200).json({ response: movieList });
+        const [count] = await pool.query('SELECT COUNT(*) FROM movies;');
+
+        return res.status(200).json({ response: movieList, count: count[0]['COUNT(*)'] });
     } catch (e) {
         return res.status(500);
     }
 });
 
+
 app.patch('/api/movies', async (req, res) => {
     try {
         const { id } = req.query;
-        const { rating, userId } = req.body;
+        const { rating, userId, review, reviewId } = req.body;
 
-        const [movieList] = await pool.query(`SELECT rating, ratingCount FROM movies where id = ${id};`);
+        const [movieList] = await pool.query(`SELECT rating, ratingCount, reviews FROM movies where id = ${id};`);
 
         const movie = movieList[0];
-        movie.ratingCount = JSON.parse(movie.ratingCount)
-        if (!movie.ratingCount.find(item => item === userId)) {
-            movie.ratingCount.push(userId)
 
-            await pool.query(`UPDATE movies SET rating = ${+movie.rating + +rating}, ratingCount = '${JSON.stringify(movie.ratingCount)}' where id = ${id};`)
+        if (rating) {
+            movie.ratingCount = JSON.parse(movie.ratingCount)
+            if (!movie.ratingCount.find(item => item === userId)) {
+                movie.ratingCount.push(userId)
 
-            return res.status(200).json({ status: true });
-        } else res.status(400).json({ message: 'Уже оценен!' });
+                await pool.query(`UPDATE movies SET rating = ${+movie.rating + +rating}, ratingCount = '${JSON.stringify(movie.ratingCount)}' where id = ${id};`)
+
+                return res.status(200).json({status: true});
+            } else res.status(400).json({message: 'Уже оценен!'});
+
+        }
+
+        if (review) {
+            movie.reviews = JSON.parse(movie.reviews)
+            const newReview = {
+                text: review.text,
+                date: new Date(),
+                id: uuidv4(),
+                author: review.author
+            }
+            movie.reviews.unshift(newReview)
+
+            await pool.query(`UPDATE movies SET reviews = '${ JSON.stringify(movie.reviews) }' where id = ${id};`)
+
+            return res.status(200).json({ response: movie.reviews });
+        }
+
+        if (reviewId) {
+            movie.reviews = JSON.parse(movie.reviews).filter(item => item.id !== reviewId);
+
+            await pool.query(`UPDATE movies SET reviews = '${ JSON.stringify(movie.reviews) }' where id = ${id};`)
+
+            return res.status(200).json({ response: movie.reviews });
+        }
     } catch (e) {
         return res.status(500);
     }
@@ -197,7 +236,6 @@ app.patch('/api/movies/favorite', async (req, res) => {
         const parsedArray = JSON.parse(userList[0].watchLater)
         if (!parsedArray.find(item => item === movieId)) parsedArray.push(movieId)
         else return res.status(400).json({ message: 'Уже добавлен!' });
-
 
         await pool.query(`UPDATE users set watchLater = '${JSON.stringify(parsedArray)}' where id = ${userId}`);
 

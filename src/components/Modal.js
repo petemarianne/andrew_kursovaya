@@ -5,7 +5,7 @@ import { WatchLater } from "./ModalContents/WatchLater.js";
 import {AddMovie} from "./ModalContents/AddMovie.js";
 import {Favorites} from "./ModalContents/Favorites.js";
 
-export const Modal = ({ close, setUser, initialTab, userFavorites, user }) => {
+export const Modal = ({ close, setUser, initialTab, userFavorites, user, setShowMovie, movieList }) => {
     const [currentTab, setCurrentTab] = useState(initialTab);
 
     const tab = useMemo(() => {
@@ -17,7 +17,7 @@ export const Modal = ({ close, setUser, initialTab, userFavorites, user }) => {
             case 'AddMovie':
                 return <AddMovie close={close}/>
             case 'Favorites':
-                return <Favorites userFavorites={userFavorites} user={user}/>
+                return <Favorites userFavorites={userFavorites} user={user} movieList={movieList} setShowMovie={setShowMovie}/>
             case 'WatchLater':
                 return <WatchLater />
             default:
