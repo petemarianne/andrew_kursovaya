@@ -137,8 +137,8 @@ app.post('/api/movies', uploadPhoto.single('pic'), async (req, res) => {
         const { name, country, producer, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, duration, director } = req.body;
 
         await pool.query(
-            `INSERT into movies (director, producer, country, name, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, rating, ratingCount, duration, pic, reviews) values
-                ('${director}', '${producer}', '${country}', '${name}', '${description}', '${actors}', '${trailer}', ${age}, ${money}, ${budget}, '${screenwriter}', '${operator}', '${genre}', '${date}', '${englishName || ''}', 0, 0, ${duration}, '${image}', '[]');`
+            `INSERT into movies (director, producer, country, name, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, rating, ratingCount, devidedRating, duration, pic, reviews) values
+                ('${director}', '${producer}', '${country}', '${name}', '${description}', '${actors}', '${trailer}', ${age}, ${money}, ${budget}, '${screenwriter}', '${operator}', '${genre}', '${date}', '${englishName || ''}', 0, '[]', 0, ${duration}, '${image}', '[]');`
         );
 
         return res.redirect('http://localhost:3000');
@@ -151,7 +151,7 @@ app.get('/api/movies', async (req, res) => {
     try {
         let query = `SELECT * FROM movies`;
         const { search, year, genre, country, page, sort } = req.query;
-        const queryObject = { name: search, year, genre, country, page: (+page - 1) * 10 };
+        const queryObject = { name: search, year, genre, country };
         const queryKeys = Object.keys(queryObject).filter(key => queryObject[key]);
         if (queryKeys.length)
             queryKeys.forEach((key, index, array) => {
@@ -162,7 +162,7 @@ app.get('/api/movies', async (req, res) => {
                 if (index !== array.length - 1) query += ' and ';
             });
 
-        query += ` ORDER BY rating ${+sort === 1 ? 'DESC' : 'ASC'} LIMIT ${queryObject.page},10`;
+        query += ` ORDER BY devidedRating ${+sort === 1 ? 'DESC' : 'ASC'} LIMIT ${(+page - 1) * 10},10`;
 
         const [movieList] = await pool.query(`${query};`);
 
@@ -177,6 +177,53 @@ app.get('/api/movies', async (req, res) => {
         return res.status(500);
     }
 });
+
+app.delete('/api/movies', async (req, res) => {
+    try {
+        const { movieId } = req.body;
+
+        await pool.query(`DELETE FROM movies WHERE id = ${movieId};`);
+
+        return res.status(200).json({ result: true });
+    } catch (e) {
+        return res.status(500);
+    }
+})
+
+app.post('/api/movie/edit', uploadPhoto.single('pic'), async (req, res) => {
+    try {
+        const image = req.file ? req.file.buffer.toString('base64') : '';
+        const { id } = req.query;
+        const { name, country, producer, description, actors, trailer, age, money, budget, screenwriter, operator, genre, date, englishName, duration, director } = req.body;
+        let query = `UPDATE movies SET 
+                    director = '${director}', 
+                    producer = '${producer}', 
+                    country = '${country}', 
+                    name = '${name}', 
+                    description = '${description}', 
+                    actors = '${actors}', 
+                    trailer = '${trailer}', 
+                    age = ${age}, 
+                    money = ${money}, 
+                    budget = ${budget}, 
+                    screenwriter = '${screenwriter}', 
+                    operator = '${operator}', 
+                    genre = '${genre}', 
+                    date = '${date}', 
+                    englishName = '${englishName || ''}',
+                    duration = ${duration}`
+
+        if (image) query += `, pic = '${image}'`;
+
+        await pool.query(
+            `${query} WHERE id = ${id};`
+        );
+
+        return res.redirect('http://localhost:3000');
+    } catch (e) {
+        return res.status(500);
+    }
+})
 
 
 app.patch('/api/movies', async (req, res) => {
@@ -193,7 +240,9 @@ app.patch('/api/movies', async (req, res) => {
             if (!movie.ratingCount.find(item => item === userId)) {
                 movie.ratingCount.push(userId)
 
-                await pool.query(`UPDATE movies SET rating = ${+movie.rating + +rating}, ratingCount = '${JSON.stringify(movie.ratingCount)}' where id = ${id};`)
+                const newRating = +movie.rating + +rating;
+
+                await pool.query(`UPDATE movies SET rating = ${newRating}, ratingCount = '${JSON.stringify(movie.ratingCount)}', devidedRating = ${ newRating / movie.ratingCount.length } where id = ${id};`)
 
                 return res.status(200).json({status: true});
             } else res.status(400).json({message: 'Уже оценен!'});

@@ -27,6 +27,7 @@ const App = () => {
         genre: '',
     });
     const [showModal, setShowModal] = useState('');
+    const [editModal, setEditModal] = useState({});
     const [showMovie, setShowMovie] = useState({});
 
     const isAuthorized = useMemo(() => !!Object.keys(user).length, [user]);
@@ -139,10 +140,10 @@ const App = () => {
                 userId: user.id
             })).then(res => res.json()).then(body => {
                 if (body.status) {
-                    const moviesArray = [...movies];
+                    const moviesArray = JSON.parse(JSON.stringify(movies));
                     const movieForEdit = moviesArray.find(item => item.id === id);
                     movieForEdit.ratingCount += 1;
-                    movieForEdit.rating += rating;
+                    movieForEdit.rating = +movieForEdit.rating + +rating;
                     setMovies(moviesArray);
                     alert('Фильм оценен!')
                 } else {
@@ -168,10 +169,28 @@ const App = () => {
             }}>Удалить</button> : null}
         </div>
 
+    const handleDelete = (e, movieId, name, isModal) => {
+        e.stopPropagation();
+        // eslint-disable-next-line no-restricted-globals
+        const toDelete= confirm(`Вы действительно хотите удалить фильм "${name}"?`);
+        if (toDelete)
+            apiClient('api/movies', 'DELETE', JSON.stringify({ movieId })).then(res => res.json()).then(({ result }) => {
+                if (result) {
+                    isModal && setShowMovie({});
+                    setLoading('Загрузка...');
+                    apiClient(`api/movies?search=${filter.search}&year=${filter.year}&genre=${filter.genre}&country=${filter.country}&page=${filter.page}&sort=${filter.sort}&ratingFrom=${filter.ratingFrom}&ratingTo=${filter.ratingTo}`, 'GET').then(res => res.json()).then(({response, count}) => {
+                        setMovies(response);
+                        setFilter(prevState => ({ ...prevState, count }));
+                        setLoading('')
+                    })
+                        .catch(() => setLoading(''));
+                }
+            })
+    }
 
-    const movie = (data) =>
-        <div className="movie-wrapper" onClick={() => {
-            setCurReviews(JSON.parse(data.reviews));
+    const movie = (data) => {
+        return <div key={`movie${data.id}`} className="movie-wrapper" onClick={() => {
+            setCurReviews(JSON.parse(data.reviews || '[]'));
             setShowMovie(data);
         }}>
             <div className="movie-pic-wrapper">
@@ -185,7 +204,7 @@ const App = () => {
                 <a href={data.trailer} target="_blank">Смотреть трейлер</a>
             </div>
             <div className="movie-actions-wrapper">
-                <h2 style={{color: getRatingColor(data.rating)}}>{(data.ratingCount ? data.rating / data.ratingCount : 0).toFixed(1)}</h2>
+                <h2 style={{color: getRatingColor(data.rating)}}>{(+data.ratingCount ? +data.rating / +data.ratingCount : 0).toFixed(1)}</h2>
                 <p>{data.ratingCount}</p>
                 <form onSubmit={(e) => {
                     e.preventDefault();
@@ -197,9 +216,16 @@ const App = () => {
                 <button onClick={e => {
                     e.stopPropagation();
                     addToFavorite(data.id)
-                }}>Хочу смотреть</button>
+                }}>Хочу смотреть
+                </button>
+                {user.isAdmin && <button onClick={(e) => {
+                    e.stopPropagation();
+                    setEditModal(data);
+                }}>Редактировать</button>}
+                {user.isAdmin && <button onClick={(e) => handleDelete(e, data.id, data.name)}>Удалить</button>}
             </div>
         </div>
+    }
 
   return (
     <div className="App">
@@ -243,6 +269,7 @@ const App = () => {
             </div>
         }
         {showModal ? <Modal close={() => setShowModal('')} setUser={setUser} initialTab={showModal} /> : null}
+        {Object.keys(editModal).length ? <Modal movie={editModal} initialTab="EditMovie" /> : null}
         {Object.keys(showMovie).length &&
             <div className="modal" onClick={() => setShowMovie({})}>
                 <div className="modal-content movie" onClick={e => e.stopPropagation()}>
@@ -296,6 +323,12 @@ const App = () => {
                                 <button type="submit">Оценить</button>
                             </form>
                             <button onClick={() => addToFavorite(showMovie.id)}>Хочу смотреть</button>
+                            {user.isAdmin && <button onClick={(e) => {
+                                e.stopPropagation();
+                                setEditModal(showMovie);
+                                setShowMovie({});
+                            }}>Редактировать</button>}
+                            {user.isAdmin && <button onClick={(e) => handleDelete(e, showMovie.id, showMovie.name, true)}>Удалить</button>}
                         </div>
                     </div>
                 </div>
